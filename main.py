@@ -4,7 +4,7 @@ from flask import Flask
 from threading import Thread
 import os
 
-# ── Your Bot Config ──
+# ── Bot Config ──
 API_ID = 22550296
 API_HASH = "07a81de905abdc7f69ba57412704bb01"
 BOT_TOKEN = "8179366580:AAEwO_AdzEid8fYsC9FaE3P92Nuot9TuIug"
@@ -20,11 +20,16 @@ app = Client("shoutout-bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOK
 
 # ── Helpers ──
 def calculate_price(msg: Message):
-    if msg.text: return round(len(msg.text) * PRICES["text"], 2), "Text"
-    elif msg.photo: return PRICES["photo"], "Image"
-    elif msg.voice: return round(msg.voice.duration * PRICES["voice"], 2), "Voice"
-    elif msg.video: return round(msg.video.duration * PRICES["video"], 2), "Video"
-    elif msg.sticker: return PRICES["sticker"], "Sticker"
+    if msg.text:
+        return round(len(msg.text) * PRICES["text"], 2), "Text"
+    elif msg.photo:
+        return PRICES["photo"], "Image"
+    elif msg.voice and msg.voice.duration:
+        return round(msg.voice.duration * PRICES["voice"], 2), "Voice"
+    elif msg.video and msg.video.duration:
+        return round(msg.video.duration * PRICES["video"], 2), "Video"
+    elif msg.sticker:
+        return PRICES["sticker"], "Sticker"
     return 0, "Unknown"
 
 def is_valid_txid(text): return len(text) >= 10 and any(char.isdigit() for char in text)
@@ -62,9 +67,10 @@ async def new_message(client, message):
     await message.reply("✍️ Send your message now. I’ll calculate the price.")
 
 # ── Main Handler ──
-@app.on_message(filters.private & filters.text & ~filters.command(["start", "help", "pricing", "menu", "new"]))
+@app.on_message(filters.private & ~filters.command(["start", "help", "pricing", "menu", "new"]))
 async def handle_user_input(client, message):
-    txid = message.text.strip()
+    txid = message.text.strip() if message.text else ""
+
     if is_valid_txid(txid):
         user = message.from_user
         await message.reply("✅ Received! We’ll review and post it soon.")
@@ -72,7 +78,7 @@ async def handle_user_input(client, message):
     else:
         price, content_type = calculate_price(message)
         if price == 0:
-            await message.reply("❌ Not a valid TXID.\nSend /new to start again.")
+            await message.reply("❌ Not a valid TXID or unsupported content.\nSend /new to start again.")
             return
         await message.reply(
             f"💸 **{content_type} Price:** `${price:.2f}`\n\n"
@@ -90,7 +96,7 @@ async def handle_user_input(client, message):
         await client.send_message(LOG_CHANNEL, f"👤 New {content_type} - ${price:.2f} from @{message.from_user.username or message.from_user.first_name}")
         await message.copy(LOG_CHANNEL)
 
-# ── Uptime Server ──
+# ── Flask Uptime ──
 flask_app = Flask('')
 
 @flask_app.route('/')
@@ -99,7 +105,7 @@ def home(): return "✅ Bot is alive."
 def run(): flask_app.run(host="0.0.0.0", port=8080)
 def keep_alive(): Thread(target=run).start()
 
-# ── Start ──
+# ── Main ──
 if __name__ == "__main__":
     keep_alive()
     print("✅ Bot running...")
