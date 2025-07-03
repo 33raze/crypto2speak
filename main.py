@@ -4,7 +4,7 @@ from flask import Flask
 from threading import Thread
 import os
 
-# ── Bot Config ──
+# ── Config ──
 API_ID = 22550296
 API_HASH = "07a81de905abdc7f69ba57412704bb01"
 BOT_TOKEN = "8179366580:AAEwO_AdzEid8fYsC9FaE3P92Nuot9TuIug"
@@ -12,27 +12,31 @@ LOG_CHANNEL = "@validised"
 POST_CHANNEL = "@speakverse"
 
 PRICES = {
-    "text": 0.20, "photo": 0.20, "voice": 3.00,
-    "video": 0.40, "sticker": 0.50
+    "text": 0.20,
+    "photo": 0.20,
+    "voice": 3.00,
+    "video": 0.40,
+    "sticker": 0.50
 }
 
 app = Client("shoutout-bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ── Helpers ──
+# ── Price Calculation ──
 def calculate_price(msg: Message):
     if msg.text:
         return round(len(msg.text) * PRICES["text"], 2), "Text"
     elif msg.photo:
         return PRICES["photo"], "Image"
-    elif msg.voice and msg.voice.duration:
-        return round(msg.voice.duration * PRICES["voice"], 2), "Voice"
-    elif msg.video and msg.video.duration:
-        return round(msg.video.duration * PRICES["video"], 2), "Video"
+    elif msg.voice:
+        return round(getattr(msg.voice, "duration", 0) * PRICES["voice"], 2), "Voice"
+    elif msg.video:
+        return round(getattr(msg.video, "duration", 0) * PRICES["video"], 2), "Video"
     elif msg.sticker:
         return PRICES["sticker"], "Sticker"
     return 0, "Unknown"
 
-def is_valid_txid(text): return len(text) >= 10 and any(char.isdigit() for char in text)
+def is_valid_txid(text):
+    return len(text) >= 10 and any(char.isdigit() for char in text)
 
 # ── Commands ──
 @app.on_message(filters.command("start"))
@@ -66,11 +70,10 @@ async def help_command(client, message):
 async def new_message(client, message):
     await message.reply("✍️ Send your message now. I’ll calculate the price.")
 
-# ── Main Handler ──
-@app.on_message(filters.private & ~filters.command(["start", "help", "pricing", "menu", "new"]))
-async def handle_user_input(client, message):
-    txid = message.text.strip() if message.text else ""
-
+# ── Text + TXID ──
+@app.on_message(filters.private & filters.text & ~filters.command(["start", "help", "pricing", "menu", "new"]))
+async def handle_text_or_txid(client, message):
+    txid = message.text.strip()
     if is_valid_txid(txid):
         user = message.from_user
         await message.reply("✅ Received! We’ll review and post it soon.")
@@ -78,25 +81,38 @@ async def handle_user_input(client, message):
     else:
         price, content_type = calculate_price(message)
         if price == 0:
-            await message.reply("❌ Not a valid TXID or unsupported content.\nSend /new to start again.")
+            await message.reply("❌ Not a valid TXID.\nSend /new to start again.")
             return
-        await message.reply(
-            f"💸 **{content_type} Price:** `${price:.2f}`\n\n"
-            "**🔐 Pay to any of these wallets:**\n\n"
-            "**• BTC**\n`15oQGcNp4GtUCH4w38wqVziPmaLTzwSHVX`\n\n"
-            "**• ETH (ERC20)**\n`0x313dd4d737941146dea8117a706b507c2cfc0147`\n\n"
-            "**• USDT (TRC20)**\n`THzmvaDHUUU61uqizyMZfqeTQHpgodL9ym`\n\n"
-            "**• BNB (BEP20)**\n`0x313dd4d737941146dea8117a706b507c2cfc0147`\n\n"
-            "**• SOL**\n`95v6HNk4yz6hngmRYm16DsUqnkGZQM3y5rWQ796szma8`\n\n"
-            "📨 After paying, send your TXID here.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📨 Contact Admin", url="https://t.me/validising")]
-            ])
-        )
-        await client.send_message(LOG_CHANNEL, f"👤 New {content_type} - ${price:.2f} from @{message.from_user.username or message.from_user.first_name}")
-        await message.copy(LOG_CHANNEL)
+        await send_price_reply(client, message, price, content_type)
 
-# ── Flask Uptime ──
+# ── Media Handler ──
+@app.on_message(filters.private & (filters.photo | filters.voice | filters.video | filters.sticker))
+async def handle_media(client, message):
+    price, content_type = calculate_price(message)
+    if price == 0:
+        await message.reply("❌ Couldn’t calculate price. Send /new to try again.")
+        return
+    await send_price_reply(client, message, price, content_type)
+
+# ── Price Reply Logic ──
+async def send_price_reply(client, message, price, content_type):
+    await message.reply(
+        f"💸 **{content_type} Price:** `${price:.2f}`\n\n"
+        "**🔐 Pay to any of these wallets:**\n\n"
+        "**• BTC**\n`15oQGcNp4GtUCH4w38wqVziPmaLTzwSHVX`\n\n"
+        "**• ETH (ERC20)**\n`0x313dd4d737941146dea8117a706b507c2cfc0147`\n\n"
+        "**• USDT (TRC20)**\n`THzmvaDHUUU61uqizyMZfqeTQHpgodL9ym`\n\n"
+        "**• BNB (BEP20)**\n`0x313dd4d737941146dea8117a706b507c2cfc0147`\n\n"
+        "**• SOL**\n`95v6HNk4yz6hngmRYm16DsUqnkGZQM3y5rWQ796szma8`\n\n"
+        "📨 After paying, send your TXID here.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📨 Contact Admin", url="https://t.me/validising")]
+        ])
+    )
+    await client.send_message(LOG_CHANNEL, f"👤 New {content_type} - ${price:.2f} from @{message.from_user.username or message.from_user.first_name}")
+    await message.copy(LOG_CHANNEL)
+
+# ── Uptime Server ──
 flask_app = Flask('')
 
 @flask_app.route('/')
@@ -105,7 +121,7 @@ def home(): return "✅ Bot is alive."
 def run(): flask_app.run(host="0.0.0.0", port=8080)
 def keep_alive(): Thread(target=run).start()
 
-# ── Main ──
+# ── Start ──
 if __name__ == "__main__":
     keep_alive()
     print("✅ Bot running...")
