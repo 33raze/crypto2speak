@@ -4,12 +4,12 @@ from flask import Flask
 from threading import Thread
 import os
 
-# ── Config from env ──
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-LOG_CHANNEL = os.environ["LOG_CHANNEL"]
-POST_CHANNEL = os.environ.get("POST_CHANNEL", "")
+# ── Your Bot Config ──
+API_ID = 22550296
+API_HASH = "07a81de905abdc7f69ba57412704bb01"
+BOT_TOKEN = "8179366580:AAEwO_AdzEid8fYsC9FaE3P92Nuot9TuIug"
+LOG_CHANNEL = "@validised"
+POST_CHANNEL = "@speakverse"
 
 PRICES = {
     "text": 0.20, "photo": 0.20, "voice": 3.00,
@@ -18,6 +18,7 @@ PRICES = {
 
 app = Client("shoutout-bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# ── Helpers ──
 def calculate_price(msg: Message):
     if msg.text: return round(len(msg.text) * PRICES["text"], 2), "Text"
     elif msg.photo: return PRICES["photo"], "Image"
@@ -28,6 +29,7 @@ def calculate_price(msg: Message):
 
 def is_valid_txid(text): return len(text) >= 10 and any(char.isdigit() for char in text)
 
+# ── Commands ──
 @app.on_message(filters.command("start"))
 async def start(client, message):
     await message.reply(
@@ -59,6 +61,7 @@ async def help_command(client, message):
 async def new_message(client, message):
     await message.reply("✍️ Send your message now. I’ll calculate the price.")
 
+# ── Main Handler ──
 @app.on_message(filters.private & filters.text & ~filters.command(["start", "help", "pricing", "menu", "new"]))
 async def handle_user_input(client, message):
     txid = message.text.strip()
@@ -96,7 +99,7 @@ def home(): return "✅ Bot is alive."
 def run(): flask_app.run(host="0.0.0.0", port=8080)
 def keep_alive(): Thread(target=run).start()
 
-# ── Main ──
+# ── Start ──
 if __name__ == "__main__":
     keep_alive()
     print("✅ Bot running...")
